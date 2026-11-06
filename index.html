@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Диагностика воронки продаж</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Golos+Text:wght@400;500;600&display=swap&subset=cyrillic" rel="stylesheet">
+<style>
+/* =========================================================
+   THEME TOKENS
+   Ink ground, bone type, one signal colour = потери воронки
+   ========================================================= */
+:root{
+  --bg:#0C100E;
+  --surface:#141917;
+  --surface-2:#1A201D;
+  --track:#232A26;
+  --muted-bar:#46504A;
+  --ink:#EEEAE3;
+  --ink-2:#A9ADA6;
+  --accent:#FF5A36;
+  --accent-text:#FF6B4A;
+
+  --serif:'Cormorant Garamond', 'Times New Roman', serif;
+  --sans:'Golos Text', 'Helvetica Neue', sans-serif;
+
+  --pad-x:120px;
+  --ease:cubic-bezier(0.16,1,0.3,1);
+  --stage-bg:#070908;
+  --slide-bg:var(--bg);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+
+/* =========================================================
+   FIXED 16:9 STAGE (viewport-base.css, full)
+   ========================================================= */
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--stage-bg,#000)}
+.deck-viewport{position:fixed;inset:0;overflow:hidden;background:var(--stage-bg,#000)}
+.deck-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0;background:var(--slide-bg,#fff)}
+.slide{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;display:block;visibility:hidden;opacity:0;pointer-events:none;background:var(--slide-bg,#fff)}
+.slide.active,.slide.visible{visibility:visible;opacity:1;pointer-events:auto;z-index:1}
+img,video,canvas,svg{max-width:100%;max-height:100%}
+.deck-controls{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000}
+@media print{
+  html,body{width:1920px;height:auto;overflow:visible;background:#fff}
+  .deck-viewport{position:static;overflow:visible;background:#fff}
+  .deck-stage{position:static;width:auto;height:auto;transform:none!important;background:none}
+  .slide{position:relative;display:block!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;width:1920px;height:1080px;break-after:page;page-break-after:always}
+  .slide:last-child{break-after:auto;page-break-after:auto}
+  .deck-controls{display:none!important}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:0.01ms!important;transition-duration:0.2s!important}
+}
+
+/* =========================================================
+   BASE SLIDE
+   ========================================================= */
+body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased}
+.slide{background:var(--bg);color:var(--ink);transition:opacity .5s var(--ease),visibility 0s linear .5s}
+.slide.active{transition:opacity .5s var(--ease),visibility 0s}
+/* film grain for depth */
+.slide::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.07;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+.num{font-family:var(--serif);font-weight:500;font-variant-numeric:lining-nums tabular-nums;letter-spacing:-0.02em}
+
+/* chrome: deck title + page */
+.chrome{position:absolute;top:56px;left:var(--pad-x);right:var(--pad-x);display:flex;justify-content:space-between;font-size:18px;color:var(--ink-2);letter-spacing:.005em}
+.pg{position:absolute;right:var(--pad-x);bottom:52px;font-size:18px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+.h2{position:absolute;left:var(--pad-x);top:150px;max-width:1500px;font:500 84px/1.02 var(--serif);letter-spacing:-0.015em;text-wrap:balance}
+
+/* =========================================================
+   MOTION: staggered reveal + growing bars
+   ========================================================= */
+.r{opacity:0;transform:translateY(26px);transition:opacity .9s var(--ease),transform .9s var(--ease);transition-delay:calc(var(--i,0) * 85ms + 120ms)}
+.slide.visible .r{opacity:1;transform:none}
+.grow{transform:scaleX(0);transform-origin:left center;transition:transform 1.2s var(--ease);transition-delay:calc(var(--i,0) * 85ms + 380ms)}
+.grow.c{transform-origin:center}
+.slide.visible .grow{transform:scaleX(1)}
+
+/* =========================================================
+   1 · COVER
+   ========================================================= */
+.cover h1{position:absolute;left:var(--pad-x);top:190px;font:500 158px/.92 var(--serif);letter-spacing:-0.025em}
+.cover .sub{position:absolute;left:var(--pad-x);top:540px;font-size:30px;line-height:1.4;color:var(--ink)}
+.cover .sub span{color:var(--ink-2)}
+.cover .team{position:absolute;left:var(--pad-x);bottom:96px;width:900px;font-size:21px;line-height:1.75;color:var(--ink-2)}
+.cover .team b{font-weight:500;color:var(--ink)}
+.cover-funnel{position:absolute;right:var(--pad-x);top:520px;width:560px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.cover-funnel div{height:58px;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center;font:500 30px var(--serif);font-variant-numeric:lining-nums}
+.cover-funnel div:last-child{background:var(--accent);color:#1a0904}
+.cover-funnel-cap{position:absolute;right:var(--pad-x);top:960px;width:640px;text-align:center;font-size:18px;color:var(--ink-2)}
+
+/* =========================================================
+   2 · DATA CLEANING
+   ========================================================= */
+.clean-left{position:absolute;left:var(--pad-x);top:150px;width:500px}
+.clean-left h2{font:500 84px/1.02 var(--serif);letter-spacing:-0.015em}
+.clean-left .big{font-size:330px;line-height:.8;margin-top:120px;display:block}
+.clean-left p{font-size:26px;line-height:1.45;margin-top:28px;max-width:420px}
+.issues{position:absolute;left:700px;right:var(--pad-x);top:150px}
+.issues-head,.issue{display:grid;grid-template-columns:270px 1fr 1fr;column-gap:40px}
+.issues-head{font-size:18px;color:var(--ink-2);padding:0 32px 18px}
+.issue{background:var(--surface);padding:30px 32px;font-size:20px;line-height:1.45;margin-bottom:6px}
+.issue:nth-child(odd){background:var(--surface-2)}
+.issue h3{font:500 34px/1.05 var(--serif);letter-spacing:-0.01em}
+.issue p{color:var(--ink)}
+.issue .id{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sw{display:inline-block;width:.8em;height:.8em;vertical-align:-.06em;margin-right:.3em}
+
+/* =========================================================
+   3 · FUNNEL
+   ========================================================= */
+.fn{position:absolute;left:var(--pad-x);right:var(--pad-x);top:300px}
+.fn-head,.fn-row{display:grid;grid-template-columns:230px 880px 170px 180px 1fr;align-items:center}
+.fn-head{font-size:18px;color:var(--ink-2);padding-bottom:16px}
+.fn-head span:nth-child(n+3){text-align:right}
+.fn-row{height:100px}
+.fn-name{font:500 38px var(--serif)}
+.track{position:relative;height:40px;background:var(--track);margin-right:40px}
+.track i{position:absolute;top:0;bottom:0;left:0;display:block}
+.fill{background:var(--ink)}
+.leak{background:var(--accent)}
+.fn-n{text-align:right;font-size:56px;line-height:1}
+.fn-n small{display:block;font:500 17px var(--sans);color:var(--accent-text);letter-spacing:0;margin-top:4px}
+.fn-p,.fn-c{text-align:right;font-size:40px;line-height:1}
+.fn-p{color:var(--ink-2)}
+.legend{position:absolute;left:var(--pad-x);bottom:96px;display:flex;gap:40px;font-size:18px;color:var(--ink-2)}
+.legend span{display:flex;align-items:center;gap:12px}
+.legend i{width:28px;height:14px;display:block}
+
+/* =========================================================
+   4 · METRICS
+   ========================================================= */
+.m-hero{position:absolute;left:var(--pad-x);top:330px;width:760px}
+.m-hero .lbl{font-size:28px}
+.m-hero .val{font-size:340px;line-height:.85;margin:24px 0 36px;display:block;letter-spacing:-0.035em}
+.m-hero p{font-size:22px;line-height:1.5;color:var(--ink-2);max-width:560px}
+.m-list{position:absolute;left:960px;right:var(--pad-x);top:300px}
+.m-row{display:grid;grid-template-columns:400px 1fr;column-gap:40px;align-items:end;padding:34px 40px 36px}
+.m-row + .m-row{border-top:0;background:transparent}
+.m-row .lbl{font-size:22px;margin-bottom:6px;grid-column:1/-1}
+.m-row .val{font-size:112px;line-height:.9}
+.m-row .val small{font-size:.42em;margin-left:.12em;color:var(--ink-2)}
+.m-row p{font-size:20px;line-height:1.5;color:var(--ink-2);padding-bottom:10px}
+.m-row:nth-child(2){background:var(--surface)}
+
+/* =========================================================
+   5 · CHANNELS
+   ========================================================= */
+.ch{position:absolute;left:var(--pad-x);right:var(--pad-x);top:370px;display:grid;grid-template-columns:repeat(3,1fr);column-gap:80px}
+.ch-col h3{font:500 52px/1 var(--serif);letter-spacing:-0.01em}
+.ch-col .conv{font-size:124px;line-height:.85;display:block;margin-top:28px}
+.ch-col .conv-l{font-size:19px;color:var(--ink-2);margin-top:10px}
+.ch-bar{position:relative;height:22px;margin-top:30px;background:transparent}
+.ch-bar .leads{position:absolute;left:0;top:0;bottom:0;background:var(--muted-bar)}
+.ch-bar .paid{position:absolute;left:0;top:0;bottom:0;background:var(--ink)}
+.ch-bar-l{font-size:19px;color:var(--ink-2);margin-top:12px}
+.ch-bar-l b{color:var(--ink);font-weight:500}
+.ch-stats{display:grid;grid-template-columns:1fr 1fr;margin-top:26px;column-gap:24px}
+.ch-stats span{display:block;font-size:18px;color:var(--ink-2)}
+.ch-stats .num{font-size:44px;line-height:1.1}
+.ch-col p.note{font-size:20px;line-height:1.5;margin-top:22px}
+.ch-col.bad .conv{color:var(--accent)}
+.ch-col.bad .paid{background:var(--accent)}
+.foot{position:absolute;left:var(--pad-x);bottom:54px;max-width:1300px;font-size:18px;line-height:1.5;color:var(--ink-2)}
+
+/* =========================================================
+   6 · MANAGERS
+   ========================================================= */
+.mg{position:absolute;left:var(--pad-x);right:var(--pad-x);top:360px}
+.mg-head,.mg-row{display:grid;grid-template-columns:270px 780px 270px 1fr;column-gap:0}
+.mg-head{font-size:18px;color:var(--ink-2);padding-bottom:18px;align-items:end}
+.mg-head .lg{display:flex;gap:28px}
+.mg-head .lg span{display:flex;align-items:center;gap:10px}
+.mg-head .lg i{width:22px;height:12px;display:block}
+.mg-row{padding:26px 0 30px;align-items:start}
+.mg-row:nth-child(odd){background:var(--surface);margin:0 -36px;padding:26px 36px 30px}
+.mg-row h3{font:500 50px/1 var(--serif)}
+.mg-row .sql{font-size:19px;color:var(--ink-2);margin-top:10px}
+.mg-bar{display:flex;height:44px;margin-right:60px}
+.mg-bar i{display:flex;align-items:center;padding-left:12px;font:500 19px var(--sans);font-style:normal;white-space:nowrap;overflow:hidden}
+.mg-bar .w{background:var(--ink);color:var(--bg)}
+.mg-bar .l{background:var(--accent);color:#1a0904}
+.mg-bar .p{background:var(--muted-bar);color:var(--ink)}
+.mg-row p{font-size:20px;line-height:1.45;margin-top:18px;margin-right:60px}
+.mg-wr{font-size:76px;line-height:.9}
+.mg-wr.bad{color:var(--accent)}
+.mg-st{font-size:20px;line-height:1.75;color:var(--ink-2)}
+.mg-st b{font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* =========================================================
+   7 · WEAK SPOTS
+   ========================================================= */
+.ws{position:absolute;left:var(--pad-x);right:var(--pad-x);top:272px;border-collapse:separate;border-spacing:0 6px;width:1680px;font-size:20px;line-height:1.42}
+.ws th{text-align:left;font-weight:400;font-size:18px;color:var(--ink-2);padding:0 28px 6px}
+.ws td{background:var(--surface);padding:18px 28px;vertical-align:top}
+.ws tr:nth-child(even) td{background:var(--surface-2)}
+.ws td:first-child{font:500 32px/1.05 var(--serif);width:290px;position:relative}
+.ws td:nth-child(2){width:470px}
+.ws td:nth-child(3){width:400px}
+.ws em{font-style:normal;color:var(--accent-text);font-weight:500}
+.ws tr.key td:first-child::before{content:"";position:absolute;left:0;top:0;bottom:0;width:8px;background:var(--accent)}
+
+/* =========================================================
+   8 · EFFECT (bone field)
+   ========================================================= */
+.light{--bg:#ECE7DF;--surface:#E1DBD0;--track:#D3CCC0;--ink:#121614;--ink-2:#575B55;--accent-text:#C2381A}
+.light::after{mix-blend-mode:multiply;opacity:.12}
+.fx-left{position:absolute;left:var(--pad-x);top:150px;width:780px}
+.fx-left h2{font:500 84px/1.02 var(--serif);letter-spacing:-0.015em}
+.fx-left .lead{font-size:24px;line-height:1.5;margin-top:40px}
+.fx-left h3{font:600 22px var(--sans);margin-top:56px}
+.fx-left ol{list-style:none;counter-reset:o;margin-top:22px}
+.fx-left li{counter-increment:o;display:grid;grid-template-columns:56px 1fr;font-size:24px;line-height:1.45;padding:22px 0;}
+.fx-left li + li{margin-top:4px}
+.fx-left li::before{content:counter(o);font:500 30px/1.1 var(--sans);color:var(--accent-text)}
+.fx-right{position:absolute;left:1020px;right:var(--pad-x);top:150px}
+.fx-big{font-size:210px;line-height:.82;letter-spacing:-0.035em}
+.fx-big small{font:500 36px var(--sans);letter-spacing:0;margin-left:16px;vertical-align:.9em}
+.fx-sub{font-size:28px;line-height:1.4;margin-top:26px}
+.fx-sub b{font-weight:600;color:var(--accent-text)}
+.fx-tbl{margin-top:54px}
+.fx-r{display:grid;grid-template-columns:1fr 150px 50px 170px;align-items:baseline;padding:16px 0}
+.fx-r{padding:16px 24px}
+.fx-r:nth-child(odd){background:var(--surface)}
+.fx-r .k{font-size:21px}
+.fx-r .a{font-size:40px;text-align:right;color:var(--ink-2)}
+.fx-r .ar{text-align:center;font-size:22px;color:var(--ink-2)}
+.fx-r .b{font-size:40px;text-align:right}
+.fx-r.hd{font-size:17px;color:var(--ink-2);padding-bottom:6px;background:none}
+.fx-r.hd span{text-align:right}
+.fx-r.hd span:first-child{text-align:left}
+.fx-why{font-size:20px;line-height:1.5;margin-top:40px;color:var(--ink-2)}
+.fx-why b{color:var(--ink);font-weight:600}
+
+/* =========================================================
+   9 · CLOSING
+   ========================================================= */
+.end h2{position:absolute;left:var(--pad-x);top:330px;font:500 200px/.9 var(--serif);letter-spacing:-0.03em}
+.end .team{position:absolute;left:var(--pad-x);bottom:96px;font-size:21px;line-height:1.75;color:var(--ink-2);width:1200px}
+.end .team b{font-weight:500;color:var(--ink)}
+.end .echo{position:absolute;right:var(--pad-x);bottom:104px;display:flex;align-items:flex-end;gap:10px;height:120px}
+.end .echo i{display:block;width:34px;background:var(--ink);transform-origin:bottom}
+.end .echo i:last-child{background:var(--accent)}
+.slide.visible .end-bar{transform:scaleY(1)}
+.end-bar{transform:scaleY(0);transition:transform 1s var(--ease);transition-delay:calc(var(--i,0)*90ms + 500ms)}
+
+/* =========================================================
+   EDIT MODE + TOAST (outside design system)
+   ========================================================= */
+.toast{position:fixed;left:50%;top:22px;transform:translate(-50%,-140%);visibility:hidden;background:#EEEAE3;color:#0C100E;font:500 14px var(--sans);padding:10px 16px;z-index:2000;transition:transform .35s var(--ease)}
+.toast.on{transform:translate(-50%,0);visibility:visible}
+.editing [contenteditable]{outline:none}
+.editing .slide *:hover{outline:1px dashed rgba(255,90,54,.5)}
+.progress{position:fixed;left:0;bottom:0;height:3px;background:var(--accent);z-index:1000;transition:width .5s var(--ease)}
+</style>
+</head>
+<body>
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+<!-- ===================== 1 · COVER ===================== -->
+<section class="slide cover active">
+  <div class="chrome r"><span>Домашнее задание</span><span>Команда 5</span></div>
+  <h1 class="r" style="--i:1">Диагностика<br>воронки продаж</h1>
+  <p class="sub r" style="--i:3">Компания «МедПартнер Сервис»<br><span>298 лидов, 6 этапов, 45 оплат</span></p>
+  <div class="cover-funnel" aria-hidden="true">
+    <div class="grow c" style="width:100%;--i:3">298</div>
+    <div class="grow c" style="width:58.7%;--i:4">175</div>
+    <div class="grow c" style="width:39.3%;--i:5">117</div>
+    <div class="grow c" style="width:25.5%;--i:6">76</div>
+    <div class="grow c" style="width:22.5%;--i:7">67</div>
+    <div class="grow c" style="width:15.1%;--i:8">45</div>
+  </div>
+  <p class="team r" style="--i:6"><b>Иванцова Галина, Белов Глеб, Казакова Софья, Смирнов Глеб, Хижняк Мария</b><br>Группа БММ234</p>
+</section>
+
+<!-- ===================== 2 · DATA ===================== -->
+<section class="slide">
+  <div class="chrome"><span>Диагностика воронки продаж</span><span>Команда 5</span></div>
+  <div class="clean-left">
+    <h2 class="r">Анализ<br>и очистка данных</h2>
+    <span class="big num r" style="--i:2" data-to="298">298</span>
+    <p class="r" style="--i:3">уникальных лидов вошли в анализ после очистки</p>
+  </div>
+  <div class="issues">
+    <div class="issues-head r" style="--i:1"><span>Проблема</span><span>Что нашли</span><span>Что сделали</span></div>
+    <div class="issue r" style="--i:2">
+      <h3>Дубликаты</h3>
+      <p>Две пары дублей: <span class="id">L-0030</span> (строки 31 и 49) и <span class="id">L-0056</span> (строки 58 и 76).</p>
+      <p>Вручную удалили повторные строки 31 и 58.</p>
+    </div>
+    <div class="issue r" style="--i:3">
+      <h3>Нет суммы у выигранных сделок</h3>
+      <p>У четырёх лидов со статусом «Выигран» не указана сумма: <span class="id">L-0024</span>, <span class="id">L-0094</span>, <span class="id">L-0001</span>, <span class="id">L-0233</span>.</p>
+      <p><i class="sw" style="background:#9B6BD6"></i>Выделили пустые ячейки фиолетовым. Исключили сделки из выручки и среднего чека, но учли в числе выигранных и в конверсии.</p>
+    </div>
+    <div class="issue r" style="--i:4">
+      <h3>Нарушена хронология</h3>
+      <p>В сделках <span class="id">L-0025</span> и <span class="id">L-0053</span> дата оплаты стоит раньше даты переговоров.</p>
+      <p><i class="sw" style="background:#E8C547"></i>Выделили строки жёлтым и не учитывали их в длительности цикла.</p>
+    </div>
+    <div class="issue r" style="--i:5">
+      <h3>Разные названия каналов</h3>
+      <p>В строках <span class="id">L-0283</span>, <span class="id">L-0159</span> и <span class="id">L-0252</span> канал записан по-разному или с лишним пробелом.</p>
+      <p>«Рекомендация» заменили на «Рекомендации», «email-рассылки» на «Email-рассылки», убрали пробел после «Конференции».</p>
+    </div>
+  </div>
+  <div class="pg"></div>
+</section>
+
+<!-- ===================== 3 · FUNNEL ===================== -->
+<section class="slide">
+  <div class="chrome"><span>Диагностика воронки продаж</span><span>Команда 5</span></div>
+  <h2 class="h2 r">Воронка продаж «МедПартнер Сервис»</h2>
+  <div class="fn">
+    <div class="fn-head r" style="--i:1"><span>Этап</span><span>Дошли до этапа и ушли на нём</span><span>Лидов</span><span>Доля от всех</span><span>Конверсия этапа</span></div>
+    <div class="fn-row r" style="--i:2"><span class="fn-name">Лид</span><div class="track"><i class="fill grow" style="width:100%;--i:2"></i></div><span class="fn-n num" data-to="298">298</span><span class="fn-p num">100%</span><span class="fn-c num"></span></div>
+    <div class="fn-row r" style="--i:3"><span class="fn-name">MQL</span><div class="track"><i class="fill grow" style="width:58.72%;--i:3"></i><i class="leak grow" style="left:58.72%;width:41.28%;--i:5"></i></div><span class="fn-n num"><span data-to="175">175</span><small>−123</small></span><span class="fn-p num">58,7%</span><span class="fn-c num">58,7%</span></div>
+    <div class="fn-row r" style="--i:4"><span class="fn-name">SQL</span><div class="track"><i class="fill grow" style="width:39.26%;--i:4"></i><i class="leak grow" style="left:39.26%;width:19.46%;--i:6"></i></div><span class="fn-n num"><span data-to="117">117</span><small>−58</small></span><span class="fn-p num">39,3%</span><span class="fn-c num">66,9%</span></div>
+    <div class="fn-row r" style="--i:5"><span class="fn-name">Предложение</span><div class="track"><i class="fill grow" style="width:25.5%;--i:5"></i><i class="leak grow" style="left:25.5%;width:13.76%;--i:7"></i></div><span class="fn-n num"><span data-to="76">76</span><small>−41</small></span><span class="fn-p num">25,5%</span><span class="fn-c num">65,0%</span></div>
+    <div class="fn-row r" style="--i:6"><span class="fn-name">Переговоры</span><div class="track"><i class="fill grow" style="width:22.48%;--i:6"></i><i class="leak grow" style="left:22.48%;width:3.02%;--i:8"></i></div><span class="fn-n num"><span data-to="67">67</span><small>−9</small></span><span class="fn-p num">22,5%</span><span class="fn-c num">88,2%</span></div>
+    <div class="fn-row r" style="--i:7"><span class="fn-name">Оплата</span><div class="track"><i class="fill grow" style="width:15.1%;--i:7"></i><i class="leak grow" style="left:15.1%;width:7.38%;--i:9"></i></div><span class="fn-n num"><span data-to="45">45</span><small>−22</small></span><span class="fn-p num">15,1%</span><span class="fn-c num">67,2%</span></div>
+  </div>
+  <div class="legend r" style="--i:9"><span><i style="background:var(--ink)"></i>дошли до этапа</span><span><i style="background:var(--accent)"></i>ушли на этапе</span><span><i style="background:var(--track)"></i>все 298 лидов</span></div>
+  <div class="pg"></div>
+</section>
+
+<!-- ===================== 4 · METRICS ===================== -->
+<section class="slide">
+  <div class="chrome"><span>Диагностика воронки продаж</span><span>Команда 5</span></div>
+  <h2 class="h2 r">Ключевые метрики</h2>
+  <div class="m-hero">
+    <div class="lbl r" style="--i:1">Сквозная конверсия</div>
+    <span class="val num r" style="--i:2"><span data-to="15.1" data-dec="1">15,1</span>%</span>
+    <p class="r" style="--i:3">Учли все 45 оплат, включая 4 сделки без указанной суммы.</p>
+  </div>
+  <div class="m-list">
+    <div class="m-row r" style="--i:3">
+      <div class="lbl">Средний чек</div>
+      <span class="val num"><span data-to="333097.56" data-dec="0">333 098</span><small>₽</small></span>
+      <p>Выручку и средний чек считали по 41 выигранной сделке с указанной суммой. Точное значение: 333&nbsp;097,56&nbsp;₽.</p>
+    </div>
+    <div class="m-row r" style="--i:4">
+      <div class="lbl">Win rate</div>
+      <span class="val num"><span data-to="43.69" data-dec="2">43,69</span><small>%</small></span>
+      <p>Только закрытые сделки после SQL: 45 выигранных и 58 проигранных. Ещё 14 сделок в работе исключили.</p>
+    </div>
+    <div class="m-row r" style="--i:5">
+      <div class="lbl">Средний цикл SQL → оплата</div>
+      <span class="val num"><span data-to="24.81" data-dec="2">24,81</span><small>дня</small></span>
+      <p>По 43 выигранным сделкам. Две сделки с нарушенной хронологией (L-0025 и L-0053) исключили.</p>
+    </div>
+  </div>
+  <div class="pg"></div>
+</section>
+
+<!-- ===================== 5 · CHANNELS ===================== -->
+<section class="slide">
+  <div class="chrome"><span>Диагностика воронки продаж</span><span>Команда 5</span></div>
+  <h2 class="h2 r">Эффективность каналов: рекомендации дают 27 оплат, email-рассылки только 3</h2>
+  <div class="ch">
+    <div class="ch-col r" style="--i:2">
+      <h3>Рекомендации</h3>
+      <span class="conv num"><span data-to="27.55" data-dec="2">27,55</span>%</span>
+      <div class="conv-l">конверсия в оплату</div>
+      <div class="ch-bar"><i class="leads grow" style="width:75.38%;--i:3"></i><i class="paid grow" style="width:20.77%;--i:5"></i></div>
+      <div class="ch-bar-l"><b>98</b> лидов, <b>27</b> оплат</div>
+      <div class="ch-stats"><div><span>Выручка</span><b class="num">10,29 млн ₽</b></div><div><span>Средний чек</span><b class="num">381 222 ₽</b></div></div>
+      <p class="note">Самый результативный канал: больше всего оплат, самая высокая конверсия и выручка.</p>
+    </div>
+    <div class="ch-col r" style="--i:3">
+      <h3>Конференции</h3>
+      <span class="conv num"><span data-to="21.43" data-dec="2">21,43</span>%</span>
+      <div class="conv-l">конверсия в оплату</div>
+      <div class="ch-bar"><i class="leads grow" style="width:53.85%;--i:4"></i><i class="paid grow" style="width:11.54%;--i:6"></i></div>
+      <div class="ch-bar-l"><b>70</b> лидов, <b>15</b> оплат</div>
+      <div class="ch-stats"><div><span>Выручка</span><b class="num">3,15 млн ₽</b></div><div><span>Средний чек</span><b class="num">242 538 ₽</b></div></div>
+      <p class="note">Второе место по всем трём показателям: оплатам, конверсии и выручке.</p>
+    </div>
+    <div class="ch-col bad r" style="--i:4">
+      <h3>Email-рассылки</h3>
+      <span class="conv num"><span data-to="2.31" data-dec="2">2,31</span>%</span>
+      <div class="conv-l">конверсия в оплату, самая низкая</div>
+      <div class="ch-bar"><i class="leads grow" style="width:100%;--i:5"></i><i class="paid grow" style="width:2.31%;--i:7"></i></div>
+      <div class="ch-bar-l"><b>130</b> лидов, <b>3</b> оплаты</div>
+      <div class="ch-stats"><div><span>Выручка*</span><b class="num">211 000 ₽</b></div><div><span>Средний чек*</span><b class="num">211 000 ₽</b></div></div>
+      <p class="note">Больше всего лидов, но всего 3 оплаты. Стоит проверить, насколько аудитория рассылок целевая и подходит ли ей предложение.</p>
+    </div>
+  </div>
+  <p class="foot r" style="--i:6">* Выручку и средний чек считали по сделкам с указанной суммой. У email сумма известна только по одной из трёх оплат, а в конверсии учтены все три.</p>
+  <div class="pg"></div>
+</section>
+
+<!-- ===================== 6 · MANAGERS ===================== -->
+<section class="slide">
+  <div class="chrome"><span>Диагностика воронки продаж</span><span>Команда 5</span></div>
+  <h2 class="h2 r">У&nbsp;Натальи&nbsp;П. лучший win&nbsp;rate, у&nbsp;Светланы&nbsp;К. самый длинный цикл</h2>
+  <div class="mg">
+    <div class="mg-head r" style="--i:1">
+      <span>Менеджер</span>
+      <span class="lg"><span><i style="background:var(--ink)"></i>выиграны</span><span><i style="background:var(--accent)"></i>проиграны</span><span><i style="background:var(--muted-bar)"></i>в работе</span></span>
+      <span>Win rate</span>
+      <span>Выручка, чек, цикл</span>
+    </div>
+    <div class="mg-row r" style="--i:2">
+      <div><h3>Наталья П.</h3><div class="sql">39 SQL</div></div>
+      <div><div class="mg-bar"><i class="w grow" style="width:41.86%;--i:3">18</i><i class="l grow" style="width:30.23%;--i:4">13</i><i class="p grow" style="width:18.6%;--i:5">8</i></div>
+        <p>Больше всего выигранных сделок, самая высокая выручка и самый высокий win rate.</p></div>
+      <span class="mg-wr num"><span data-to="58.06" data-dec="2">58,06</span>%</span>
+      <div class="mg-st"><b>6,90 млн ₽</b> выручка<br><b>431 188 ₽</b> средний чек<br><b>24,71 дня</b> цикл</div>
+    </div>
+    <div class="mg-row r" style="--i:3">
+      <div><h3>Артём Ж.</h3><div class="sql">35 SQL</div></div>
+      <div><div class="mg-bar"><i class="w grow" style="width:39.53%;--i:4">17</i><i class="l grow" style="width:39.53%;--i:5">17</i><i class="p grow" style="width:2.33%;--i:6"></i></div>
+        <p>Самый короткий цикл сделки при win rate 50%, но выручка самая низкая среди менеджеров.</p></div>
+      <span class="mg-wr num"><span data-to="50" data-dec="2">50,00</span>%</span>
+      <div class="mg-st"><b>2,29 млн ₽</b> выручка<br><b>142 938 ₽</b> средний чек<br><b>15,13 дня</b> цикл</div>
+    </div>
+    <div class="mg-row r" style="--i:4">
+      <div><h3>Светлана К.</h3><div class="sql">43 SQL</div></div>
+      <div><div class="mg-bar"><i class="w grow" style="width:23.26%;--i:5">10</i><i class="l grow" style="width:65.12%;--i:6">28</i><i class="p grow" style="width:11.62%;--i:7">5</i></div>
+        <p>Получила больше всего SQL, но у неё самый низкий win rate и самый длинный цикл. Стоит изучить, почему сделки проигрываются.</p></div>
+      <span class="mg-wr bad num"><span data-to="26.32" data-dec="2">26,32</span>%</span>
+      <div class="mg-st"><b>4,47 млн ₽</b> выручка<br><b>496 778 ₽</b> средний чек<br><b>40,5 дня</b> цикл</div>
+    </div>
+  </div>
+  <div class="pg"></div>
+</section>
+
+<!-- ===================== 7 · WEAK SPOTS ===================== -->
+<section class="slide">
+  <div class="chrome"><span>Диагностика воронки продаж</span><span>Команда 5</span></div>
+  <h2 class="h2 r">Слабые места в воронке продаж</h2>
+  <table class="ws">
+    <thead class="r" style="--i:1"><tr><th>Слабое место</th><th>Что показали данные</th><th>Возможная причина</th><th>Что проверить в первую очередь</th></tr></thead>
+    <tbody>
+      <tr class="r" style="--i:2"><td>Лид → MQL</td><td><em>123 из 298</em> лидов не дошли до MQL. Конверсия 58,7%.</td><td>Часть входящих лидов не относится к целевой аудитории.</td><td>Сравнить долю нецелевых лидов по каналам и выяснить, каким критериям отбора они не соответствуют.</td></tr>
+      <tr class="r key" style="--i:3"><td>SQL → КП</td><td><em>41 из 117</em> лидов не дошли до КП. У 17 проигранных сделок причина в долгой подготовке предложения.</td><td>Подготовка и согласование КП занимают слишком много времени.</td><td>По истории сделок найти, где возникали задержки: при подготовке, согласовании или отправке КП.</td></tr>
+      <tr class="r" style="--i:4"><td>Переговоры → оплата</td><td><em>22 из 67</em> сделок без оплаты: 17 проиграны, 5 в работе.</td><td>Цена, предложения конкурентов или сложности с согласованием условий.</td><td>Отделить сделки в работе от проигранных и посмотреть, какие причины отказа встречались чаще.</td></tr>
+      <tr class="r" style="--i:5"><td>Email-рассылки</td><td>Из 130 лидов оплатили <em>только 3</em>, конверсия 2,31%. 58 контактов оказались нецелевыми, ещё 21 не вышел на связь.</td><td>Рассылка попадает в нецелевую аудиторию или предложение не отвечает потребностям сегмента.</td><td>Сравнить долю нецелевых контактов и лидов без ответа по сегментам. Проверить, какое предложение получил каждый сегмент.</td></tr>
+      <tr class="r" style="--i:6"><td>Работа менеджеров</td><td>Win rate у Натальи <em>58,06%</em>, у Светланы <em>26,32%</em> и самый длинный цикл (40,5 дня). Артём закрывает быстрее всех (15,13 дня), но выручка у него самая низкая.</td><td>Разная нагрузка, сложность сделок, скорость ответа и подход к общению с клиентами.</td><td>Сравнить нагрузку и сложность сделок, затем на похожих сделках сопоставить скорость ответа и подход к клиентам.</td></tr>
+    </tbody>
+  </table>
+  <div class="pg"></div>
+</section>
+
+<!-- ===================== 8 · EFFECT ===================== -->
+<section class="slide light">
+  <div class="chrome"><span>Диагностика воронки продаж</span><span>Команда 5</span></div>
+  <div class="fx-left">
+    <h2 class="r">Ключевое слабое место: переход от SQL к КП</h2>
+    <p class="lead r" style="--i:1">Коммерческое предложение получают только 65% квалифицированных лидов. Если отправлять КП большему числу таких клиентов, оплат станет больше за счёт уже привлечённых лидов.</p>
+    <h3 class="r" style="--i:2">Что предлагаем</h3>
+    <ol>
+      <li class="r" style="--i:3">Единый шаблон КП, который можно адаптировать под потребности каждого клиента.</li>
+      <li class="r" style="--i:4">Контроль сроков отправки предложений в CRM через напоминания.</li>
+    </ol>
+  </div>
+  <div class="fx-right">
+    <div class="fx-big num r" style="--i:2">+<span data-to="7">7</span><small>оплат</small></div>
+    <p class="fx-sub r" style="--i:3">Примерно 7 дополнительных оплат и <b>+2,33&nbsp;млн&nbsp;₽</b> расчётной выручки</p>
+    <div class="fx-tbl">
+      <div class="fx-r hd r" style="--i:4"><span>Показатель</span><span>Было</span><span></span><span>Цель</span></div>
+      <div class="fx-r r" style="--i:5"><span class="k">Конверсия SQL → КП</span><span class="a num">65%</span><span class="ar">→</span><span class="b num">75%</span></div>
+      <div class="fx-r r" style="--i:6"><span class="k">Количество КП</span><span class="a num">76</span><span class="ar">→</span><span class="b num">≈88</span></div>
+      <div class="fx-r r" style="--i:7"><span class="k">Количество оплат</span><span class="a num">45</span><span class="ar">→</span><span class="b num">≈52</span></div>
+      <div class="fx-r r" style="--i:8"><span class="k">Расчётная выручка, млн ₽</span><span class="a num">14,99</span><span class="ar">→</span><span class="b num">17,32</span></div>
+    </div>
+    <p class="fx-why r" style="--i:9"><b>Почему цель 75%.</b> Для неё нужно довести до отправки КП ещё <b>12 лидов</b>, аа у <b>17 из 41 лида</b>nbsp;уа у <b>17 из 41 лида</b>nbsp;<b>17 из 41 лида</b>, не дошедшего до КП, причиной потери в CRM указана долгая подготовка предложения.</p>
+  </div>
+  <div class="pg"></div>
+</section>
+
+<!-- ===================== 9 · CLOSING ===================== -->
+<section class="slide end">
+  <div class="chrome r"><span>Диагностика воронки продаж</span><span>Команда 5</span></div>
+  <h2 class="r" style="--i:1">Спасибо<br>за внимание</h2>
+  <div class="echo" aria-hidden="true">
+    <i class="end-bar" style="height:100%;--i:1"></i><i class="end-bar" style="height:58.7%;--i:2"></i><i class="end-bar" style="height:39.3%;--i:3"></i><i class="end-bar" style="height:25.5%;--i:4"></i><i class="end-bar" style="height:22.5%;--i:5"></i><i class="end-bar" style="height:15.1%;--i:6"></i>
+  </div>
+  <p class="team r" style="--i:3"><b>Иванцова Галина, Белов Глеб, Казакова Софья, Смирнов Глеб, Хижняк Мария</b><br>Группа БММ234</p>
+</section>
+
+</main>
+</div>
+<div class="progress" id="progress"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+   SLIDE CONTROLLER: scale, keys, wheel, swipe, count-up, edit
+   ========================================================= */
+class Deck{
+  constructor(){
+    this.stage=document.getElementById('deckStage');
+    this.restore();
+    this.slides=[...this.stage.querySelectorAll('.slide')];
+    this.i=0; this.editing=false; this.lock=false;
+    this.reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    /* ?still: static render for screenshots / PDF */
+    if(location.search.includes('still')){this.reduce=true;const st=document.createElement('style');st.textContent='*,*::before,*::after{transition:none!important;animation:none!important}';document.head.appendChild(st);}
+    this.slides.forEach((s,k)=>{const p=s.querySelector('.pg'); if(p) p.textContent=(k+1)+' / '+this.slides.length;});
+    this.scale(); addEventListener('resize',()=>this.scale());
+    this.keys(); this.wheel(); this.touch();
+    const h=parseInt(location.hash.slice(1)); this.go(isNaN(h)?0:h-1,true);
+  }
+  scale(){
+    const f=Math.min(innerWidth/1920,innerHeight/1080);
+    this.stage.style.transform=`translate(${(innerWidth-1920*f)/2}px,${(innerHeight-1080*f)/2}px) scale(${f})`;
+  }
+  go(n,first){
+    n=Math.max(0,Math.min(n,this.slides.length-1));
+    if(n===this.i&&!first) return;
+    const prev=this.slides[this.i];
+    prev.classList.remove('active','visible');
+    this.i=n; const s=this.slides[n];
+    s.classList.add('active');
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{s.classList.add('visible'); this.count(s);}));
+    document.getElementById('progress').style.width=((n+1)/this.slides.length*100)+'%';
+    history.replaceState(null,'','#'+(n+1));
+  }
+  fmt(v,d){
+    let s=v.toFixed(d).replace('.',',');
+    const [a,b]=s.split(',');
+    const int=a.replace(/\B(?=(\d{3})+(?!\d))/g,' ');
+    return b!==undefined?int+','+b:int;
+  }
+  count(s){
+    s.querySelectorAll('[data-to]').forEach(el=>{
+      const to=parseFloat(el.dataset.to), d=parseInt(el.dataset.dec||0);
+      if(this.reduce){el.textContent=this.fmt(to,d);return;}
+      const t0=performance.now()+250, dur=1400;
+      const tick=t=>{
+        const p=Math.min(1,Math.max(0,(t-t0)/dur)), e=1-Math.pow(1-p,4);
+        el.textContent=this.fmt(to*e,d);
+        if(p<1) requestAnimationFrame(tick);
+      };
+      el.textContent=this.fmt(0,d); requestAnimationFrame(tick);
+    });
+  }
+  keys(){
+    addEventListener('keydown',e=>{
+      if(this.editing){
+        if(e.key==='Escape'){this.toggleEdit();}
+        if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();this.download();}
+        return;
+      }
+      if(['ArrowRight','ArrowDown','PageDown',' ','Enter'].includes(e.key)){e.preventDefault();this.go(this.i+1);}
+      if(['ArrowLeft','ArrowUp','PageUp','Backspace'].includes(e.key)){e.preventDefault();this.go(this.i-1);}
+      if(e.key==='Home') this.go(0);
+      if(e.key==='End') this.go(this.slides.length-1);
+      if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}
+      if(e.key==='e'||e.key==='E'||e.key==='у'||e.key==='У') this.toggleEdit();
+    });
+  }
+  wheel(){
+    addEventListener('wheel',e=>{
+      if(this.editing||this.lock||Math.abs(e.deltaY)<20) return;
+      this.lock=true; setTimeout(()=>this.lock=false,750);
+      this.go(this.i+(e.deltaY>0?1:-1));
+    },{passive:true});
+  }
+  touch(){
+    let x=0,y=0;
+    addEventListener('touchstart',e=>{x=e.touches[0].clientX;y=e.touches[0].clientY;},{passive:true});
+    addEventListener('touchend',e=>{
+      if(this.editing) return;
+      const dx=e.changedTouches[0].clientX-x, dy=e.changedTouches[0].clientY-y;
+      if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)) this.go(this.i+(dx<0?1:-1));
+    },{passive:true});
+  }
+  /* --- inline editing: E to toggle, Esc to leave, Ctrl/Cmd+S to download --- */
+  toggleEdit(){
+    this.editing=!this.editing;
+    document.body.classList.toggle('editing',this.editing);
+    if(this.editing){
+      this.stage.querySelectorAll('[data-to]').forEach(el=>el.removeAttribute('data-to'));
+      this.stage.querySelectorAll('h1,h2,h3,p,span,td,th,li,b,div.lbl,div.sql,div.conv-l').forEach(el=>el.setAttribute('contenteditable','true'));
+      this.toast('Режим правки: кликните по тексту. Esc сохранит, Ctrl+S скачает файл');
+    }else{
+      this.stage.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+      try{localStorage.setItem('funnel-deck-v1',this.stage.innerHTML);}catch(e){}
+      this.toast('Изменения сохранены в браузере');
+    }
+  }
+  restore(){
+    try{const h=localStorage.getItem('funnel-deck-v1'); if(h) this.stage.innerHTML=h;}catch(e){}
+  }
+  download(){
+    this.stage.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+    const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([html],{type:'text/html'}));
+    a.download='index.html'; a.click();
+    this.toggleEdit();
+  }
+  toast(t){
+    const el=document.getElementById('toast'); el.textContent=t; el.classList.add('on');
+    clearTimeout(this.tt); this.tt=setTimeout(()=>el.classList.remove('on'),2600);
+  }
+}
+new Deck();
+</script>
+</body>
+</html>
